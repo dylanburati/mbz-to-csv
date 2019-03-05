@@ -64,7 +64,7 @@ def generate_csv(dcols):
         if a is not None:
             artist_id_supplemental.append(a)
 
-    artists_with_tag: pd.Series = artist_tag.loc[:, "artist"].drop_duplicates()
+    artists_with_tag = artist_tag.loc[:, "artist"].drop_duplicates()
     artists_with_tag = pd.concat((artists_with_tag, pd.Series(artist_id_supplemental)))
     artists_with_tag.drop_duplicates(inplace=True)
 
@@ -85,7 +85,7 @@ def generate_csv(dcols):
 
     # Partition recording data to avoid out-of-memory
     partition_proc = subprocess.run([PATH_TO_SHELL, "./partition.sh", "./mbdump/mbdump/recording", "3000000"],
-                                    capture_output=True)
+                                    stdout=subprocess.PIPE)
     partition_count = int(str(partition_proc.stdout, encoding="utf-8"))
     print("generate_csv_recording: generating {} intermediate files".format(partition_count))
 
@@ -184,7 +184,7 @@ def generate_csv(dcols):
 
 
 if __name__ == "__main__":
-    check_proc1 = subprocess.run([PATH_TO_SHELL, "./check_writable.sh"], capture_output=True)
+    check_proc1 = subprocess.run([PATH_TO_SHELL, "./check_writable.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     print(str(check_proc1.stderr, "utf-8"))
     print(str(check_proc1.stdout, "utf-8"))
 
@@ -192,8 +192,8 @@ if __name__ == "__main__":
     if confirm.capitalize() != "Y":
         sys.exit(0)
 
-    # pull_database()
-    check_proc2 = subprocess.run([PATH_TO_SHELL, "./check_readable.sh"], capture_output=True)
+    pull_database()
+    check_proc2 = subprocess.run([PATH_TO_SHELL, "./check_readable.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     print(str(check_proc2.stderr, "utf-8"))
     print(str(check_proc2.stdout, "utf-8"))
 
