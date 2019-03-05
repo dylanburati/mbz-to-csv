@@ -32,7 +32,7 @@ def pull_database():
 def generate_csv(dcols):
     """
     Generates 2 final .csv files, one based on the `recording` MusicBrainz table, and the other based on `release_group`
-    
+
     Columns for recording.csv (artist_credit: str, name: str, id: int)
     Columns for release_group.csv (artist_credit: str, name: str, id: int, type: int)
     :return: None
@@ -53,14 +53,12 @@ def generate_csv(dcols):
                          quoting=3)
     artist.set_axis(dcols["artist"], axis=1, inplace=True)
     artist_map2 = {}
-    artist_map2r = {}
     for x in artist.itertuples():
-        artist_map2[x[1]] = x[3]   # artist.id -> artist.name
-        artist_map2r[str(x[3]).lower()] = x[1]  # lowercase(artist.name) -> artist.id
+        artist_map2[str(x[3]).lower()] = x[1]  # lowercase(artist.name) -> artist.id
     artist_name_supplemental = read_list_from_file("./artist_name_supplemental.txt")
     artist_id_supplemental = []
     for x in artist_name_supplemental:
-        a = artist_map2r.get(x.lower(), None)
+        a = artist_map2.get(x.lower(), None)
         if a is not None:
             artist_id_supplemental.append(a)
 
@@ -68,7 +66,8 @@ def generate_csv(dcols):
     artists_with_tag = pd.concat((artists_with_tag, pd.Series(artist_id_supplemental)))
     artists_with_tag.drop_duplicates(inplace=True)
 
-    artist_credit_name = pd.read_csv("./mbdump/mbdump/artist_credit_name", encoding="utf-8", header=None, delimiter="\t", engine="python", quoting=3)
+    artist_credit_name = pd.read_csv("./mbdump/mbdump/artist_credit_name", encoding="utf-8", header=None,
+                                     delimiter="\t", engine="python", quoting=3)
     artist_credit_name.set_axis(dcols["artist_credit_name"], axis=1, inplace=True)
 
     artist_map3 = {}
@@ -111,18 +110,17 @@ def generate_csv(dcols):
         recording1 = recording1.loc[:, ["name", "artist_credit", "id"]]
         recording1.to_csv("./csv/recording{}.csv".format(i), index=False)
         print("generate_csv_recording: recording{0:d}.csv, {1:d} rows".format(i, recording1.shape[0]))
-
-    # Garbage collection
-    if partition_count >= 1:
         del recording1
         del recording1_disp
+
+    # Garbage collection
     del artist_credit
     del artist_tag
     del artist
     del artists_with_tag
     del artist_credit_name
     del artist_map2
-    del artist_map2r
+    del artist_map2
     del artist_map3
 
     # Concatenate trimmed data
@@ -133,6 +131,7 @@ def generate_csv(dcols):
     recording_all_disp["artist_credit"] = recording_all["artist_credit"].str.lower()
     recording_all_disp["name"] = recording_all["name"].str.lower()
     recording_all_disp = recording_all_disp[~recording_all_disp["name"].str.contains("\x6e\x69\x67\x67\x65\x72")]
+    recording_all_disp = recording_all_disp[~recording_all_disp["artist_credit"].str.contains("\x6e\x69\x67\x67\x65\x72")]
     recording_all_disp.drop_duplicates(inplace=True)
     recording_all = recording_all.reindex(recording_all_disp.index)
     recording_all.to_csv("./csv/recording.csv", index=False)
