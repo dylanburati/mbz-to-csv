@@ -43,7 +43,7 @@ def generate_csv(dcols):
     artist_credit.set_axis(dcols["artist_credit"], axis=1, inplace=True)
     artist_map1 = {}
     for x in artist_credit.itertuples():
-        artist_map1[x[1]] = x[2]  # artist_credit.id TO artist_credit.name
+        artist_map1[x[1]] = x[2]  # artist_credit.id -> artist_credit.name
 
     # Use artist tags along with external sources to trim down the data set
     artist_tag = pd.read_csv("./mbdump-derived/mbdump/artist_tag", encoding="utf-8", header=None, delimiter="\t",
@@ -55,8 +55,8 @@ def generate_csv(dcols):
     artist_map2 = {}
     artist_map2r = {}
     for x in artist.itertuples():
-        artist_map2[x[1]] = x[3]   # artist.id TO artist.name
-        artist_map2r[str(x[3]).lower()] = x[1]  # lowercase(artist.name) TO artist.id
+        artist_map2[x[1]] = x[3]   # artist.id -> artist.name
+        artist_map2r[str(x[3]).lower()] = x[1]  # lowercase(artist.name) -> artist.id
     artist_name_supplemental = read_list_from_file("./artist_name_supplemental.txt")
     artist_id_supplemental = []
     for x in artist_name_supplemental:
@@ -75,13 +75,13 @@ def generate_csv(dcols):
     for x in artist_credit_name.itertuples():
         cr = artist_map3.get(x[3], [])
         cr.append(x[1])
-        artist_map3[x[3]] = cr  # artist.id TO artist_credit.id (multiple)
+        artist_map3[x[3]] = cr  # artist.id -> artist_credit.id (multiple)
     artist_map4 = {}
     for x in artists_with_tag.iteritems():
         for cr in artist_map3.get(x[1], []):
             an = artist_map1.get(cr, None)
             if an is not None:
-                artist_map4[cr] = an  # artist_credit.id TO artist.name (not unique)
+                artist_map4[cr] = an  # artist_credit.id -> artist.name (not unique)
 
     # Partition recording data to avoid out-of-memory
     partition_proc = subprocess.run([PATH_TO_SHELL, "./partition.sh", "./mbdump/mbdump/recording", "3000000"],
@@ -160,7 +160,7 @@ def generate_csv(dcols):
     release_group_type2.set_axis(dcols["release_group_secondary_type_join"], axis=1, inplace=True)
     release_type_map = {}
     for x in release_group.itertuples():
-        release_type_map[x[1]] = x[5]  # release_group.id TO release_group.type
+        release_type_map[x[1]] = x[5]  # release_group.id -> release_group.type
     for x in release_group_type2.itertuples():
         release_type_map[x[1]] = str(20 + x[2])  # supersede (live version or rerecording of release_group.id)
 
