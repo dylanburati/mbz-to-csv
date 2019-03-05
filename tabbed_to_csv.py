@@ -94,12 +94,14 @@ def generate_csv(dcols):
             return artist_map4.get(i, np.nan)
         except ValueError:
             return np.nan
+    convert_col_idx = dcols["recording"].index("artist_credit")
 
     # Trim each set of recording data to `artist_credit` in `artist_map4`, remove duplicates based on
     # case-sensitive comparisons of ordered pair (artist_credit.name, recording.name)
     for i in range(1, partition_count + 1):
         recording1 = pd.read_csv("./mbdump/mbdump/recording.{}".format(i), encoding="utf-8", header=None,
-                                 delimiter="\t", engine="python", quoting=3, converters={3: convert_to_artist})
+                                 delimiter="\t", engine="python", quoting=3,
+                                 converters={convert_col_idx: convert_to_artist})
         recording1.set_axis(dcols["recording"], axis=1, inplace=True)
         recording1_disp = recording1.loc[:, ["artist_credit", "name"]]
         recording1_disp["artist_credit"] = recording1_disp["artist_credit"].str.lower()
@@ -119,7 +121,6 @@ def generate_csv(dcols):
     del artist
     del artists_with_tag
     del artist_credit_name
-    del artist_map2
     del artist_map2
     del artist_map3
 
@@ -149,13 +150,14 @@ def generate_csv(dcols):
             return artist_map1.get(i, np.nan)
         except ValueError:
             return np.nan
+    convert_col_idx = dcols["release_group"].index("artist_credit")
 
     # Generate release type map
     release_group = pd.read_csv("./mbdump/mbdump/release_group", encoding="utf-8", header=None, delimiter="\t",
-                                engine="python", quoting=3, converters={3: convert_to_artist2})
+                                engine="python", quoting=3, converters={convert_col_idx: convert_to_artist2})
     release_group.set_axis(dcols["release_group"], axis=1, inplace=True)
-    release_group_type2 = pd.read_csv("./mbdump/mbdump/release_group_secondary_type_join", header=None, delimiter="\t",
-                                      engine="python", quoting=3)
+    release_group_type2 = pd.read_csv("./mbdump/mbdump/release_group_secondary_type_join", encoding="utf-8", header=None,
+                                      delimiter="\t", engine="python", quoting=3)
     release_group_type2.set_axis(dcols["release_group_secondary_type_join"], axis=1, inplace=True)
     release_type_map = {}
     for x in release_group.itertuples():
