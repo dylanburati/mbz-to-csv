@@ -188,18 +188,26 @@ if __name__ == "__main__":
     print(str(check_proc1.stderr, "utf-8"))
     print(str(check_proc1.stdout, "utf-8"))
 
-    confirm = input("Continue? [Y/n]: ")
-    if confirm.capitalize() != "Y":
-        sys.exit(0)
+    if not "--auto" in sys.argv:
+        confirm = input("Continue? [Y/n]: ")
+        if confirm.capitalize() != "Y":
+            sys.exit(0)
+    else:
+        check_proc1.check_returncode()
 
-    pull_database()
+    if not "--local" in sys.argv:
+        pull_database()
+
     check_proc2 = subprocess.run([PATH_TO_SHELL, "./check_readable.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     print(str(check_proc2.stderr, "utf-8"))
     print(str(check_proc2.stdout, "utf-8"))
 
-    confirm = input("Continue? [Y/n]: ")
-    if confirm.capitalize() != "Y":
-        sys.exit(0)
+    if not "--auto" in sys.argv:
+        confirm = input("Continue? [Y/n]: ")
+        if confirm.capitalize() != "Y":
+            sys.exit(0)
+    else:
+        check_proc2.check_returncode()
 
     tables_to_columns = sql_to_columns()
     generate_csv(tables_to_columns)
