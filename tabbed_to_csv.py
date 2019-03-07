@@ -3,8 +3,7 @@ import sys
 from typing import *
 from sql_to_columns import sql_to_columns
 import subprocess
-import pandas as pd
-import numpy as np
+import csv
 
 PATH_TO_SHELL = "/bin/bash"
 
@@ -29,6 +28,61 @@ def pull_database():
     mbz_update_proc = subprocess.run([PATH_TO_SHELL, "./update_db.sh"])
 
 
+class CustomDict(dict):
+    def __init__(self, key_column: str, val_column: str, all_columns: List[str], from_dict: Dict = None):
+        if from_dict is None:
+            from_dict = {}
+        super().__init__(from_dict)
+        self.key_column = all_columns.index(key_column)
+        self.val_column = all_columns.index(val_column)
+
+    def parse_and_insert(self, line: str, key_converter: Callable = lambda x: x, val_converter: Callable = lambda x: x) -> None:
+        k = key_converter(line[self.key_column])
+        v = val_converter(line[self.val_column])
+        if k is not None and v is not None:
+            self[k] = v
+
+    def parse_and_update(self, line: str, key_converter: Callable = lambda x: x, val_updater: Callable = lambda prev, x: x) -> None:
+        k = key_converter(line[self.key_column])
+        if k is not None:
+            prev = self.get(k, None)
+            v = val_updater(prev, line[self.val_column])
+            if v is not None:
+                self[k] = v
+
+
+class CustomSet(set):
+    def __init__(self, val_column: str, all_columns: List[str], from_list: Iterable = None):
+        if from_list is None:
+            from_list = []
+        super().__init__(from_list)
+        self.val_column = all_columns.index(val_column)
+
+    def parse_and_add(self, line: str, val_converter: Callable = lambda x: x) -> None:
+        v = val_converter(line[self.val_column])
+        if v is not None:
+            self.add(v)
+
+
+class HashTable(dict):
+    def __init__(self, use_columns: List[str], all_columns: List[str]):
+        super().__init__()
+        self.labels = use_columns
+        self.use_columns = [all_columns.index(col) for col in use_columns]
+
+    def parse_and_add(self, line: str, hash_gen: Callable, val_converters: Dict[str, Callable]) -> None:
+        row = [None] * len(self.use_columns)
+        for i, src_idx, label in zip(range(len(self.use_columns)), self.use_columns, self.labels):
+            converter = val_converters.get(label, None)
+            if converter is None:
+                row[i] = line[src_idx]
+            else:
+                row[i] = converter(line[src_idx])
+        k = hash_gen(row)
+        if k is not None and self.get(k, None) is None:
+            self[k] = row
+
+
 def generate_csv(dcols):
     """
     Generates 2 final .csv files, one based on the `recording` MusicBrainz table, and the other based on `release_group`
@@ -38,150 +92,121 @@ def generate_csv(dcols):
     :return: None
     """
     global PATH_TO_SHELL
-    artist_credit = pd.read_csv("./mbdump/mbdump/artist_credit", encoding="utf-8", header=None, delimiter="\t",
-                                engine="python", quoting=3)
-    artist_credit.set_axis(dcols["artist_credit"], axis=1, inplace=True)
-    artist_map1 = {}
-    for x in artist_credit.itertuples():
-        artist_map1[x[1]] = x[2]  # artist_credit.id -> artist_credit.name
 
-    # Use artist tags along with external sources to trim down the data set
-    artist_tag = pd.read_csv("./mbdump-derived/mbdump/artist_tag", encoding="utf-8", header=None, delimiter="\t",
-                             engine="python", quoting=3)
-    artist_tag.set_axis(dcols["artist_tag"], axis=1, inplace=True)
-    artist = pd.read_csv("./mbdump/mbdump/artist", encoding="utf-8", header=None, delimiter="\t", engine="python",
-                         quoting=3)
-    artist.set_axis(dcols["artist"], axis=1, inplace=True)
-    artist_map2 = {}
-    for x in artist.itertuples():
-        artist_map2[str(x[3]).lower()] = x[1]  # lowercase(artist.name) -> artist.id
+    artist_map1 = CustomDict("id", "name", dcols["artist_credit"])
+    with open("./mbdump/mbdump/artist_credit", "r", encoding="utf-8") as fp:
+        artist_credit = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line in artist_credit:
+            artist_map1.parse_and_insert(line)
+
+    artist_map2 = CustomDict("name", "id", dcols["artist"])
+    with open("./mbdump/mbdump/artist", "r", encoding="utf-8") as fp:
+        artist = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line in artist:
+            artist_map2.parse_and_insert(line, key_converter=str.lower)
+
     artist_name_supplemental = read_list_from_file("./artist_name_supplemental.txt")
     artist_id_supplemental = []
     for x in artist_name_supplemental:
         a = artist_map2.get(x.lower(), None)
         if a is not None:
             artist_id_supplemental.append(a)
-
-    artists_with_tag = artist_tag.loc[:, "artist"].drop_duplicates()
-    artists_with_tag = pd.concat((artists_with_tag, pd.Series(artist_id_supplemental)))
-    artists_with_tag.drop_duplicates(inplace=True)
-
-    artist_credit_name = pd.read_csv("./mbdump/mbdump/artist_credit_name", encoding="utf-8", header=None,
-                                     delimiter="\t", engine="python", quoting=3)
-    artist_credit_name.set_axis(dcols["artist_credit_name"], axis=1, inplace=True)
-
-    artist_map3 = {}
-    for x in artist_credit_name.itertuples():
-        cr = artist_map3.get(x[3], [])
-        cr.append(x[1])
-        artist_map3[x[3]] = cr  # artist.id -> artist_credit.id (multiple)
-    artist_map4 = {}
-    for x in artists_with_tag.iteritems():
-        for cr in artist_map3.get(x[1], []):
-            an = artist_map1.get(cr, None)
-            if an is not None:
-                artist_map4[cr] = an  # artist_credit.id -> artist.name (not unique)
-
-    # Partition recording data to avoid out-of-memory
-    partition_proc = subprocess.run([PATH_TO_SHELL, "./partition.sh", "./mbdump/mbdump/recording", "3000000"],
-                                    stdout=subprocess.PIPE)
-    partition_count = int(str(partition_proc.stdout, encoding="utf-8"))
-    print("generate_csv_recording: generating {} intermediate files".format(partition_count))
-
-    def convert_to_artist(ac):
-        try:
-            i = int(ac)
-            return artist_map4.get(i, np.nan)
-        except ValueError:
-            return np.nan
-    convert_col_idx = dcols["recording"].index("artist_credit")
-
-    # Trim each set of recording data to `artist_credit` in `artist_map4`, remove duplicates based on
-    # case-sensitive comparisons of ordered pair (artist_credit.name, recording.name)
-    for i in range(1, partition_count + 1):
-        recording1 = pd.read_csv("./mbdump/mbdump/recording.{}".format(i), encoding="utf-8", header=None,
-                                 delimiter="\t", engine="python", quoting=3,
-                                 converters={convert_col_idx: convert_to_artist})
-        recording1.set_axis(dcols["recording"], axis=1, inplace=True)
-        recording1_disp = recording1.loc[:, ["artist_credit", "name"]]
-        recording1_disp["artist_credit"] = recording1_disp["artist_credit"].str.lower()
-        recording1_disp["name"] = recording1_disp["name"].str.lower()
-        recording1_disp.dropna(inplace=True)
-        recording1_disp.drop_duplicates(inplace=True)
-        recording1 = recording1.reindex(recording1_disp.index)
-        recording1 = recording1.loc[:, ["name", "artist_credit", "id"]]
-        recording1.to_csv("./csv/recording{}.csv".format(i), index=False)
-        print("generate_csv_recording: recording{0:d}.csv, {1:d} rows".format(i, recording1.shape[0]))
-        del recording1
-        del recording1_disp
-
-    # Garbage collection
-    del artist_credit
-    del artist_tag
-    del artist
-    del artists_with_tag
-    del artist_credit_name
     del artist_map2
+
+    artist_map3 = CustomDict("artist", "artist_credit", dcols["artist_credit_name"])
+    with open("./mbdump/mbdump/artist_credit_name", "r", encoding="utf-8") as fp:
+        artist_credit_name = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line in artist_credit_name:
+            def val_updater(prev, x):
+                if prev is None:
+                    return [x]
+                prev.append(x)
+                return prev
+            artist_map3.parse_and_update(line, val_updater=val_updater)
+
+    artists_with_tag = CustomSet("artist", dcols["artist_tag"], from_list=artist_id_supplemental)
+    with open("./mbdump-derived/mbdump/artist_tag", "r", encoding="utf-8") as fp:
+        artist_tag = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line in artist_tag:
+            artists_with_tag.parse_and_add(line)
+
+    artist_map4 = {}
+    for a in artists_with_tag:
+        associated_credits = artist_map3.get(a, [])
+        for ac in associated_credits:
+            name = artist_map1.get(ac, None)
+            if name is not None:
+                artist_map4[ac] = name
+
+    print('total artists: {}, tagged+supplemental: {}'.format(len(artist_map1), len(artist_map4)))
     del artist_map3
 
-    # Concatenate trimmed data
-    rejoin_proc = subprocess.run([PATH_TO_SHELL, "./rejoin_numeric.sh", "./mbdump/mbdump/recording", "./csv/recording"])
+    recording_use_columns = ["id", "artist_credit", "name"]
 
-    recording_all = pd.read_csv("./csv/recordingALL.csv", encoding="utf-8")
-    recording_all_disp = recording_all.loc[:, ["artist_credit", "name"]]
-    recording_all_disp["artist_credit"] = recording_all["artist_credit"].str.lower()
-    recording_all_disp["name"] = recording_all["name"].str.lower()
-    recording_all_disp = recording_all_disp[~recording_all_disp["name"].str.contains("\x6e\x69\x67\x67\x65\x72")]
-    recording_all_disp = recording_all_disp[~recording_all_disp["artist_credit"].str.contains("\x6e\x69\x67\x67\x65\x72")]
-    recording_all_disp.drop_duplicates(inplace=True)
-    recording_all = recording_all.reindex(recording_all_disp.index)
-    recording_all.to_csv("./csv/recording.csv", index=False)
-    print("generate_csv_recording: recording.csv, {0:d} rows".format(recording_all.shape[0]))
+    def convert_to_artist(x):
+        return artist_map4.get(x, None)
 
-    # Garbage collection
+    def recording_hash(row):
+        if row[1] is None or row[2] is None or row[1] == "" or row[2] == "" \
+                or "\x6e\x69\x67\x67\x65\x72" in row[1].lower() or "\x6e\x69\x67\x67\x65\x72" in row[2].lower():
+            return None
+        return hash(row[1].lower() + row[2].lower())
+
+    recording_all = HashTable(recording_use_columns, dcols["recording"])
+    with open("./mbdump/mbdump/recording", "r", encoding="utf-8") as fp:
+        recording = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line in recording:
+            recording_all.parse_and_add(line, recording_hash, {"artist_credit": convert_to_artist})
+
+    print('recording.csv: writing {} rows'.format(len(recording_all)))
+    with open("./csv/recording.csv", "w", newline="", encoding="utf-8") as fp:
+        fp.write(",".join(recording_use_columns) + "\r\n")
+        recording_out = csv.writer(fp, quoting=csv.QUOTE_MINIMAL)
+        for row in recording_all.values():
+            recording_out.writerow(row)
+    print('recording.csv written')
+
     del recording_all
-    del recording_all_disp
-
     # End of generate_csv_recording
     # Start of generate_csv_release_group
-    def convert_to_artist2(ac):
-        try:
-            i = int(ac)
-            return artist_map1.get(i, np.nan)
-        except ValueError:
-            return np.nan
-    convert_col_idx = dcols["release_group"].index("artist_credit")
+    release_group_use_columns = ["id", "artist_credit", "name", "type"]
 
-    # Generate release type map
-    release_group = pd.read_csv("./mbdump/mbdump/release_group", encoding="utf-8", header=None, delimiter="\t",
-                                engine="python", quoting=3, converters={convert_col_idx: convert_to_artist2})
-    release_group.set_axis(dcols["release_group"], axis=1, inplace=True)
-    release_group_type2 = pd.read_csv("./mbdump/mbdump/release_group_secondary_type_join", encoding="utf-8", header=None,
-                                      delimiter="\t", engine="python", quoting=3)
-    release_group_type2.set_axis(dcols["release_group_secondary_type_join"], axis=1, inplace=True)
-    release_type_map = {}
-    for x in release_group.itertuples():
-        release_type_map[x[1]] = x[5]  # release_group.id -> release_group.type
-    for x in release_group_type2.itertuples():
-        release_type_map[x[1]] = str(20 + x[2])  # supersede (live version or rerecording of release_group.id)
+    def convert_to_artist2(x):
+        return artist_map1.get(x, None)
 
-    # Index by id and update type
-    release_group.set_axis(release_group.loc[:, "id"].tolist(), axis=0, inplace=True)
-    release_group["type"] = pd.Series(release_type_map)
-    release_group["type"] = release_group["type"].str.replace(r"\\N", "-1")
+    def convert_type(x):
+        if x == r'\N':
+            return '-1'
+        return x
 
-    # Remove duplicates based on case-sensitive comparisons of ordered pair (artist_credit.name, release_group.name)
-    release_group_disp = release_group.loc[:, ["artist_credit", "name"]]
-    release_group_disp["artist_credit"] = release_group_disp["artist_credit"].str.lower()
-    release_group_disp["name"] = release_group_disp["name"].str.lower()
-    release_group_disp.dropna(inplace=True)
-    release_group_disp.drop_duplicates(inplace=True)
-    release_group_disp = release_group_disp[~release_group_disp["name"].str.contains("\x6e\x69\x67\x67\x65\x72")]
-    release_group_disp = release_group_disp[~release_group_disp["artist_credit"].str.contains("\x6e\x69\x67\x67\x65\x72")]
-    release_group = release_group.reindex(release_group_disp.index)
-    release_group = release_group.loc[:, ["name", "artist_credit", "id", "type"]]
-    release_group.to_csv("./csv/release_group.csv", index=False)
-    print("generate_csv_release_group: release_group.csv, {0:d} rows".format(release_group.shape[0]))
+    def release_group_hash(row):
+        if row[1] is None or row[2] is None or row[1] == "" or row[2] == "" \
+                or "\x6e\x69\x67\x67\x65\x72" in row[1].lower() or "\x6e\x69\x67\x67\x65\x72" in row[2].lower():
+            return None
+        return hash(row[1].lower() + row[2].lower())
+
+    release_group_all = HashTable(release_group_use_columns, dcols["release_group"])
+    with open("./mbdump/mbdump/release_group", "r", encoding="utf-8") as fp:
+        release_group = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line in release_group:
+            release_group_all.parse_and_add(line, release_group_hash, {"artist_credit": convert_to_artist2, "type": convert_type})
+
+    release_type_map = CustomDict("release_group", "secondary_type", dcols["release_group_secondary_type_join"])
+    with open("./mbdump/mbdump/release_group_secondary_type_join", "r", encoding="utf-8") as fp:
+        release_group_type2 = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
+        for line in release_group_type2:
+            release_type_map.parse_and_insert(line)
+
+    print('release_group.csv: writing {} rows'.format(len(release_group_all)))
+    with open("./csv/release_group.csv", "w", newline="", encoding="utf-8") as fp:
+        fp.write(",".join(release_group_use_columns) + "\r\n")
+        release_group_out = csv.writer(fp, quoting=csv.QUOTE_MINIMAL)
+        for row in release_group_all.values():
+            type2 = release_type_map.get(row[0], None)
+            if type2 is not None:
+                row[3] = str(20 + int(type2))
+            release_group_out.writerow(row)
+    print('release_group.csv written')
 
 
 if __name__ == "__main__":
