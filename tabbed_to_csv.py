@@ -146,6 +146,23 @@ def generate_csv(dcols):
     def convert_to_artist(x):
         return artist_map4.get(x, None)
 
+    def normalize_name(x):
+        charmap = [
+            ('\u2010', '-'),
+            ('\u2011', '-'),
+            ('\u2012', '-'),
+            ('\u2013', '-'),
+            ('\u2014', '-'),
+            ('\u2018', "'"),
+            ('\u2019', "'"),
+            ('\u201c', '"'),
+            ('\u201d', '"'),
+            ('\u2026', '...')
+        ]
+        for ch, rch in charmap:
+            x = x.replace(ch, rch)
+        return x
+
     def recording_hash(row):
         if row[1] is None or row[2] is None or row[1] == "" or row[2] == "" \
                 or "\x6e\x69\x67\x67\x65\x72" in row[1].lower() or "\x6e\x69\x67\x67\x65\x72" in row[2].lower():
@@ -156,7 +173,7 @@ def generate_csv(dcols):
     with open("./mbdump/mbdump/recording", "r", encoding="utf-8") as fp:
         recording = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
         for line in recording:
-            recording_all.parse_and_add(line, recording_hash, {"artist_credit": convert_to_artist})
+            recording_all.parse_and_add(line, recording_hash, {"artist_credit": convert_to_artist, "name": normalize_name})
 
     print('recording.csv: writing {} rows'.format(len(recording_all)), flush=True)
     with open("./csv/recording.csv", "w", newline="", encoding="utf-8") as fp:
@@ -189,7 +206,8 @@ def generate_csv(dcols):
     with open("./mbdump/mbdump/release_group", "r", encoding="utf-8") as fp:
         release_group = csv.reader(fp, delimiter="\t", quoting=csv.QUOTE_NONE)
         for line in release_group:
-            release_group_all.parse_and_add(line, release_group_hash, {"artist_credit": convert_to_artist2, "type": convert_type})
+            release_group_all.parse_and_add(line, release_group_hash, {"artist_credit": convert_to_artist2,
+                                                                       "type": convert_type, "name": normalize_name})
 
     release_type_map = CustomDict("release_group", "secondary_type", dcols["release_group_secondary_type_join"])
     with open("./mbdump/mbdump/release_group_secondary_type_join", "r", encoding="utf-8") as fp:
