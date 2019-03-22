@@ -79,7 +79,7 @@ class HashTable(dict):
             else:
                 row[i] = converter(line[src_idx])
         k = hash_gen(row)
-        if k is not None and self.get(k, None) is None:
+        if k is not None and k not in self:
             self[k] = row
 
 
@@ -138,7 +138,7 @@ def generate_csv(dcols):
             if name is not None:
                 artist_map4[ac] = name
 
-    print('total artists: {}, tagged+supplemental: {}'.format(len(artist_map1), len(artist_map4)))
+    print('total artists: {}, tagged+supplemental: {}'.format(len(artist_map1), len(artist_map4)), flush=True)
     del artist_map3
 
     recording_use_columns = ["id", "artist_credit", "name"]
@@ -158,13 +158,13 @@ def generate_csv(dcols):
         for line in recording:
             recording_all.parse_and_add(line, recording_hash, {"artist_credit": convert_to_artist})
 
-    print('recording.csv: writing {} rows'.format(len(recording_all)))
+    print('recording.csv: writing {} rows'.format(len(recording_all)), flush=True)
     with open("./csv/recording.csv", "w", newline="", encoding="utf-8") as fp:
         fp.write(",".join(recording_use_columns) + "\r\n")
         recording_out = csv.writer(fp, quoting=csv.QUOTE_MINIMAL)
         for row in recording_all.values():
             recording_out.writerow(row)
-    print('recording.csv written')
+    print('recording.csv written', flush=True)
 
     del recording_all
     # End of generate_csv_recording
@@ -197,7 +197,7 @@ def generate_csv(dcols):
         for line in release_group_type2:
             release_type_map.parse_and_insert(line)
 
-    print('release_group.csv: writing {} rows'.format(len(release_group_all)))
+    print('release_group.csv: writing {} rows'.format(len(release_group_all)), flush=True)
     with open("./csv/release_group.csv", "w", newline="", encoding="utf-8") as fp:
         fp.write(",".join(release_group_use_columns) + "\r\n")
         release_group_out = csv.writer(fp, quoting=csv.QUOTE_MINIMAL)
@@ -206,13 +206,13 @@ def generate_csv(dcols):
             if type2 is not None:
                 row[3] = str(20 + int(type2))
             release_group_out.writerow(row)
-    print('release_group.csv written')
+    print('release_group.csv written', flush=True)
 
 
 if __name__ == "__main__":
     check_proc1 = subprocess.run([PATH_TO_SHELL, "./check_writable.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    print(str(check_proc1.stderr, "utf-8"))
-    print(str(check_proc1.stdout, "utf-8"))
+    print(str(check_proc1.stderr, "utf-8"), flush=True)
+    print(str(check_proc1.stdout, "utf-8"), flush=True)
 
     if not "--auto" in sys.argv:
         confirm = input("Continue? [Y/n]: ")
@@ -225,8 +225,8 @@ if __name__ == "__main__":
         pull_database()
 
     check_proc2 = subprocess.run([PATH_TO_SHELL, "./check_readable.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    print(str(check_proc2.stderr, "utf-8"))
-    print(str(check_proc2.stdout, "utf-8"))
+    print(str(check_proc2.stderr, "utf-8"), flush=True)
+    print(str(check_proc2.stdout, "utf-8"), flush=True)
 
     if not "--auto" in sys.argv:
         confirm = input("Continue? [Y/n]: ")

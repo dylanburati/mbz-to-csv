@@ -84,6 +84,6 @@ def sql_to_columns() -> Dict[str, List[str]]:
                 _discard_, boundary, start_idx = read_to_regex_match(sql, start_idx, r'[()]')
                 if boundary == '(':
                     nesting['parens'] += 1
-                else:
+                elif boundary == ')':
                     nesting['parens'] -= 1
     return tables_to_columns
