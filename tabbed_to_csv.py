@@ -9,9 +9,8 @@ PATH_TO_SHELL = "/bin/bash"
 
 
 def read_list_from_file(filename: str) -> List:
-    fp = open(filename, "r", encoding="utf-8")
-    content = "".join(fp.readlines())
-    fp.close()
+    with open(filename, "r", encoding="utf-8") as fp:
+        content = fp.read()
     l = eval(content)
     if type(l) != list:
         raise ValueError("Expected file contents to be a list")
